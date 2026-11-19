@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>彥豪生日 30 杯集點卡</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,'Noto Sans TC',sans-serif;color:#563c49;background:#fff6f7}*{box-sizing:border-box}body{margin:0;padding:24px 14px}.wrap{max-width:550px;margin:auto}.hero{text-align:center;padding:24px 10px}.hero h1{font-size:27px;margin:8px 0}.hero p{color:#967c86}.panel{background:white;border-radius:22px;padding:22px;box-shadow:0 8px 28px #a8617b17;margin-bottom:16px}.count{text-align:center;font-size:24px;font-weight:700;color:#bc5578}.bar{height:12px;background:#f8e2e9;border-radius:20px;overflow:hidden;margin:15px 0}.fill{height:100%;background:#db7192;width:0;transition:width .3s}.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.cup{border:1px solid #efcbd6;background:#fff9fb;border-radius:14px;min-height:70px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:24px}.cup small{font-size:11px;color:#987c86}.cup.used{background:#e6f4ed;border-color:#a5d4b9}.cup.used small{color:#327858}button{border:0;border-radius:12px;background:#bd5b7b;color:white;padding:12px 16px;font-size:15px;font-weight:600}button:disabled{opacity:.5}input{width:100%;padding:12px;border:1px solid #e3cbd3;border-radius:10px;font-size:16px;margin:8px 0}.muted{font-size:13px;color:#8a7680;line-height:1.6}.hidden{display:none}.actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.actions button{flex:1;min-width:90px}.log{font-size:13px;line-height:1.9;max-height:200px;overflow:auto}.log-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid #f8e2e9}.log-row button{font-size:12px;padding:7px 9px;background:#8d7b83;flex-shrink:0}.error{color:#b52647;white-space:pre-wrap}.ok{color:#28724c}
+</style>
+</head>
+<body>
+<main class="wrap">
+<header class="hero"><div style="font-size:48px">🎂🥤</div><h1>彥豪生日 30 杯集點卡</h1><p>生日快樂！每一杯都是一份心意 💗</p></header>
+<section class="panel"><div id="status" class="muted" role="status">正在連線…</div><div class="count"><span id="used">0</span> / 30 杯</div><div class="bar"><div id="fill" class="fill"></div></div><div id="grid" class="grid"></div><p class="muted" style="text-align:center">🔒 僅管理員可核銷或取消核銷</p></section>
+<section class="panel"><h3>🔐 管理員專區</h3><div id="signedOut"><p class="muted">只有預先授權的 Google 帳號能核銷。</p><button id="login">使用 Google 登入</button></div><div id="signedIn" class="hidden"><p id="who" class="muted"></p><div id="admin" class="hidden"><label for="cupNumber">選擇核銷杯數（1–30）</label><input id="cupNumber" type="number" min="1" max="30" step="1" placeholder="例如：1"><div class="actions"><button id="redeem">確認核銷這一杯</button><button id="logout" style="background:#8d7b83">登出</button></div><p id="feedback" class="muted" role="status"></p><h4>已核銷紀錄（可取消誤核銷）</h4><div id="logs" class="log"></div></div><div id="notAdmin" class="hidden"><p class="error">此帳號未獲管理員授權，無法核銷。</p><button id="logoutOther">登出</button></div></div></section>
+<p class="muted" style="text-align:center">彥豪專屬 · 30 杯幸福計畫</p>
+</main>
+<script type="module">
+import {initializeApp} from 'https://www.gstatic.com/firebasejs/13.4.0/firebase-app.js';
+import {getAuth,GoogleAuthProvider,signInWithPopup,signInWithRedirect,getRedirectResult,onAuthStateChanged,signOut} from 'https://www.gstatic.com/firebasejs/13.4.0/firebase-auth.js';
+import {getFirestore,collection,doc,onSnapshot,runTransaction,serverTimestamp} from 'https://www.gstatic.com/firebasejs/13.4.0/firebase-firestore.js';
+const firebaseConfig={apiKey:'AIzaSyAW58g_GHi91kxdB86y5lvSKU738YfXk3I',authDomain:'hao-birthday.firebaseapp.com',projectId:'hao-birthday',storageBucket:'hao-birthday.firebasestorage.app',messagingSenderId:'631894087208',appId:'1:631894087208:web:403962454837d813ad471d',measurementId:'G-8DCHQ06JTV'};
+// 將下方改成 Firebase Authentication 管理員使用者的 UID，必須與 Firestore 規則一致。
+const ADMIN_UID='REPLACE_WITH_ADMIN_UID';
+const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app),provider=new GoogleAuthProvider();
+const redemptions=collection(db,'birthdayCards','yanhao','redemptions');
+const $=id=>document.getElementById(id);
+let entries={},user=null,connected=false,busy=false;
+function showError(e){$('status').textContent='連線或權限錯誤：'+(e?.message||e);$('status').className='error';connected=false;render()}
+function isAdmin(){return !!user&&user.uid===ADMIN_UID}
+function setFeedback(message,error=false){$('feedback').textContent=message;$('feedback').className=error?'error':'ok'}
+function render(){const count=Array.from({length:30},(_,i)=>String(i+1)).filter(k=>entries[k]?.redeemed===true).length;$('used').textContent=count;$('fill').style.width=(count/30*100)+'%';$('grid').replaceChildren();for(let i=1;i<=30;i++){const done=entries[String(i)]?.redeemed===true;const cell=document.createElement('div');cell.className='cup'+(done?' used':'');const emoji=document.createElement('span');emoji.textContent=done?'✅':'🥤';const label=document.createElement('small');label.textContent='第 '+i+' 杯';cell.append(emoji,label);$('grid').append(cell)}$('logs').replaceChildren();const used=Object.entries(entries).filter(([n,v])=>Number(n)>=1&&Number(n)<=30&&v?.redeemed===true).sort((a,b)=>Number(a[0])-Number(b[0]));if(!used.length){$('logs').textContent='目前尚無核銷紀錄';return}for(const [num,data] of used){const line=document.createElement('div');line.className='log-row';const label=document.createElement('span');const date=data.redeemedAt?.toDate?.();label.textContent=`第 ${num} 杯 · ${date?date.toLocaleString('zh-TW'):'時間同步中'}`;line.append(label);if(isAdmin()){const cancel=document.createElement('button');cancel.textContent='取消核銷';cancel.disabled=busy||!connected;cancel.onclick=()=>cancelRedemption(num);line.append(cancel)}$('logs').append(line)}}
+onSnapshot(redemptions,s=>{entries={};s.forEach(d=>{entries[d.id]=d.data()});connected=true;$('status').textContent='☁️ 已連線，資料即時同步';$('status').className='muted';render()},showError);
+onAuthStateChanged(auth,u=>{user=u;$('signedOut').classList.toggle('hidden',!!u);$('signedIn').classList.toggle('hidden',!u);if(u){$('who').textContent='目前登入：'+(u.email||u.uid);$('admin').classList.toggle('hidden',!isAdmin());$('notAdmin').classList.toggle('hidden',isAdmin())}render()});
+getRedirectResult(auth).catch(showError);
+$('login').onclick=async()=>{try{await signInWithPopup(auth,provider)}catch(e){if(['auth/popup-blocked','auth/operation-not-supported-in-this-environment'].includes(e.code)){try{await signInWithRedirect(auth,provider)}catch(err){showError(err)}}else showError(e)}};
+async function logout(){try{await signOut(auth)}catch(e){showError(e)}}$('logout').onclick=logout;$('logoutOther').onclick=logout;
+async function redeem(){const n=Number($('cupNumber').value);if(!Number.isInteger(n)||n<1||n>30){setFeedback('請輸入 1–30 的整數',true);return}if(!isAdmin()){setFeedback('沒有管理員權限',true);return}if(!connected){setFeedback('資料尚未連線，請稍後再試',true);return}if(!confirm(`確定核銷第 ${n} 杯？`))return;busy=true;$('redeem').disabled=true;render();try{const ref=doc(redemptions,String(n));await runTransaction(db,async tx=>{const snap=await tx.get(ref);if(snap.exists())throw Error('這一杯已經核銷，不能重複使用');tx.set(ref,{redeemed:true,redeemedBy:user.uid,redeemedAt:serverTimestamp()})});setFeedback(`第 ${n} 杯核銷成功！`);$('cupNumber').value=''}catch(e){setFeedback(e.message,true)}finally{busy=false;$('redeem').disabled=false;render()}}
+async function cancelRedemption(num){if(!isAdmin()||!connected||busy)return;if(!confirm(`確定取消第 ${num} 杯的核銷？取消後可以重新核銷。`))return;busy=true;$('redeem').disabled=true;render();try{const ref=doc(redemptions,String(num));await runTransaction(db,async tx=>{const snap=await tx.get(ref);if(!snap.exists())throw Error('此杯目前未核銷');tx.delete(ref)});setFeedback(`已取消第 ${num} 杯核銷`)}catch(e){setFeedback(e.message,true)}finally{busy=false;$('redeem').disabled=false;render()}}
+$('redeem').onclick=redeem;
+render();
+</script>
+</body>
+</html>
